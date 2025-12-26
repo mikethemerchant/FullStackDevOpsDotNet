@@ -7,7 +7,7 @@
 ---
 
 ## 1. Vision Statement
-Create a fully integrated, containerized Microsoft-based application platform for internal business systems, enabling rapid deployment, maintainability, and AI-assisted automation. The solution will modernize legacy Access/SQL apps into secure, web-based applications hosted on Windows Server 2022 using IIS, backed by CI/CD pipelines in Azure DevOps and enhanced by a local AI agent using Llama.
+Create a fully integrated, containerized Microsoft-based application platform for internal business systems, enabling rapid deployment, maintainability, and AI-assisted automation. The solution will modernize legacy applications into secure, web-based applications hosted on Windows Server using IIS, backed by CI/CD pipelines in Azure DevOps and enhanced by a local AI agent.
 
 ---
 
