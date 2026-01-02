@@ -1,6 +1,6 @@
-# Future State System Specification (v3)
+# Future State System Specification (v4)
 
-**Author:** Mike Bender  
+**Author:** Michael Bender  
 **Stack:** Microsoft Full Stack (Blazor, .NET 8, EF Core, SQL Server, Azure DevOps, IIS, Containers, Local AI)  
 **Date:** January 2026 
 
@@ -78,6 +78,7 @@ These non-goals reduce risk and operational overhead during the initial rollout 
 | Stage | Trigger | Action | Target |
 |--------|----------|---------|---------|
 | **Dev** | Local Build | Developer runs locally | Local IIS Express / Kestrel |
+| **Test (CI)** | On every commit/PR | Run unit + integration tests, fail build if coverage drops below targets | Azure DevOps hosted agent |
 | **Test** | Merge to `test` branch | Azure DevOps builds & deploys to Test | Test Server (IIS) |
 | **Prod** | Merge + Approve PR to `main` | Azure DevOps deploys after approval | Production Server (IIS) |
 
@@ -91,6 +92,84 @@ Each deployment includes:
 ### CI/CD Notes (YAML)
 - CI/CD is defined using Azure DevOps **YAML pipelines** (build + deployment). The intent is repeatable deployments to Test/Prod with minimal manual steps.
 - Recommendation: keep the API and UI build as separate jobs and deploy them as separate artifacts, even if hosted on the same server.
+
+### 6.1. Database Migration Strategy
+
+#### EF Core Migration Workflow
+1. **Developers create migrations locally** using `dotnet ef migrations add <MigrationName>` when modifying the EF Core data model.
+2. **Migrations are committed to source control** alongside code changes (`.cs` migration files in the `Migrations/` folder).
+3. **CI/CD pipeline validates migrations** can be applied cleanly before deployment by running `dotnet ef migrations bundle --self-contained` and verifying the bundle builds successfully.
+
+#### Deployment-Time Migration Application
+1. **Test Environment:** Migrations are applied **automatically** during deployment via EF Core Migration Bundles (`efbundle.exe`). The deployment pipeline executes the bundle as part of the release process.
+2. **Production Environment:** Migrations are **reviewed during PR approval** to assess risk (e.g., schema changes, data loss potential). The bundle is executed in the deployment pipeline **after** an approval gate and only after a pre-deployment database backup completes.
+3. **Always take a database backup** before applying migrations in Production. Use SQL Server backup jobs or inline YAML steps to capture the backup and verify success before proceeding.
+
+#### Rollback Procedures
+| Scenario | Action |
+|----------|--------|
+| **Code rollback only (no schema changes)** | Redeploy previous IIS artifacts from Azure DevOps; database remains at current schema version. |
+| **Schema change rollback (breaking change)** | Restore database from pre-deployment backup, then redeploy previous code version to match the restored schema. |
+| **Failed migration (partial apply)** | **Stop deployment immediately.** Restore database from backup. Investigate migration failure offline before reattempting. Do not proceed to Production. |
+
+#### Migration Reversibility (Down Migrations)
+- EF Core generates both **Up** (apply) and **Down** (rollback) migrations by default. Maintain these in source control for local development reversibility.
+- **Production rollback via Down migrations is risky** (data loss, incomplete rollback). Always prefer **database backup restoration** for Production rollbacks rather than running `Down()` methods.
+- Down migrations are useful for local development iteration but should not be relied upon in Production scenarios.
+
+### 6.2. Rollback Procedures
+
+#### Pre-Deployment Preparation Checklist
+Before deploying to Production, ensure the following are in place to enable rapid rollback if necessary:
+
+- [ ] **Verify database backup completed successfully** (automated in pipeline; check backup completion status before proceeding).
+- [ ] **Document current deployed version numbers** for API, UI, and database schema version (store in deployment notes or Azure DevOps release).
+- [ ] **Ensure previous deployment artifacts are retained** in Azure DevOps (minimum 5 releases retained per retention policy).
+- [ ] **Confirm health check endpoint** is operational and returns expected status before deployment begins.
+
+#### Rollback Decision Matrix
+| Issue Severity | Time to Detect | Action |
+|----------------|----------------|--------|
+| **Critical (application down, data loss, security breach)** | < 5 minutes | **Immediate rollback** to previous version. No investigation; restore service first. |
+| **Major (feature broken, significant user impact)** | < 30 minutes | **Rollback if no quick fix available.** Attempt rapid fix only if root cause is obvious and fix can be deployed in < 15 minutes. |
+| **Minor (cosmetic issue, non-critical bug)** | Any time | **Fix forward in next deployment.** Do not rollback; log issue and schedule fix in upcoming sprint. |
+
+#### IIS Rollback Procedure
+Follow these steps to rollback an IIS-hosted application to the previous deployment:
+
+1. **Stop the affected IIS application pool** via IIS Manager or PowerShell: `Stop-WebAppPool -Name "AppPoolName"`.
+2. **Restore previous deployment artifacts** from Azure DevOps release (download artifacts or trigger redeploy of previous release).
+3. **Update web.config** if configuration values changed between versions (connection strings, app settings).
+4. **Restart the IIS application pool**: `Start-WebAppPool -Name "AppPoolName"`.
+5. **Verify health check endpoint** responds successfully (e.g., `https://appname/health` returns HTTP 200).
+6. **If database schema changed:** Restore database from pre-deployment backup before restarting the application pool (see Database Migration Strategy rollback procedures).
+
+#### Automated Rollback Capabilities
+- **Azure DevOps redeploy:** Azure DevOps supports one-click redeploy of any previous release via the Releases UI. Navigate to the target environment, select a previous successful release, and click "Redeploy."
+- **PowerShell artifact swap example:**
+
+```powershell
+# Example: Automated IIS artifact swap script
+$appPoolName = "MyAppPool"
+$sitePath = "C:\inetpub\wwwroot\MyApp"
+$backupPath = "C:\Deployments\Backups\MyApp_v1.2.3"
+
+Stop-WebAppPool -Name $appPoolName
+Remove-Item "$sitePath\*" -Recurse -Force
+Copy-Item "$backupPath\*" -Destination $sitePath -Recurse
+Start-WebAppPool -Name $appPoolName
+Write-Host "Rollback complete. Verify health check."
+```
+
+- **Database rollback approval:** Database rollbacks require manual approval due to data loss risk. Automated rollback scripts should **stop and alert** before restoring a database backup, requiring operator confirmation.
+
+#### Post-Rollback Actions
+After a rollback is executed, complete the following within the specified timeframes:
+
+1. **Update incident log** with root cause summary, rollback timestamp, and impacted users (within 1 hour).
+2. **Schedule post-mortem meeting** within 48 hours; include development, QA, and operations stakeholders.
+3. **Create work item** to address the underlying issue that caused the rollback; prioritize based on severity.
+4. **Review deployment process** for gaps in testing or approval gates that allowed the issue to reach Production.
 
 ---
 
@@ -113,14 +192,78 @@ Each deployment includes:
 | **AI Connector API** | .NET service connecting to local AI endpoint. |
 | **Knowledge Base** | Uses vectorized project data and DevOps logs. |
 | **Usage Examples** | “Summarize last 10 commits”, “Review recent build logs for errors.” |
+### 7.3. Knowledge Base Maintenance
 
+#### Knowledge Base Refresh Strategy
+Vector embeddings are regenerated when code or documentation changes to ensure the AI agent has current information for code review and triage.
+
+1. **Automatic regeneration** is triggered on merge to the `main` branch via an Azure DevOps pipeline task.
+2. **Incremental updates** are used for performance: only files modified since the last embedding run are re-embedded (based on git diff).
+3. **Initial embedding generation** takes 15-30 minutes for a full codebase; incremental updates complete in 2-5 minutes.
+
+#### Information Sources
+| Source | Update Frequency | Purpose |
+|--------|------------------|---------|
+| **Source code (C#, Blazor, SQL)** | On commit to main | Code review, pattern analysis, and answering "where is X implemented?" |
+| **API contracts (OpenAPI/Swagger)** | On API schema changes | Contract understanding and breaking change detection |
+| **Build/deploy logs** | Real-time | Failure triage and root cause analysis for CI/CD issues |
+| **Application logs/traces** | Real-time stream | Runtime issue diagnosis, correlation ID-based debugging |
+| **Runbooks/documentation** | Weekly | Operational guidance, onboarding support, and procedural questions |
+
+#### Storage and Indexing Approach
+- **Local vector database:** Use ChromaDB (or similar lightweight vector store) hosted on the AI server alongside Ollama/LM Studio.
+- **Separate collections:** Maintain distinct collections for code artifacts vs. operational data (logs/traces) to optimize query performance and relevance.
+- **Retention policy:** Keep the last 90 days of logs and traces; retain all code and documentation from the `main` branch indefinitely (archive older branches as needed).
+
+#### Performance Considerations
+- Initial embedding generation for a new repository takes **15-30 minutes** depending on codebase size.
+- Incremental updates (triggered by new commits) complete in **2-5 minutes** and run asynchronously without blocking deployments.
+- Query performance is optimized by separating code embeddings from operational log embeddings (different query patterns).
 ### Information Strategy (to keep AI useful, not risky)
 - Primary inputs: source code, API contracts (OpenAPI), build/deploy logs, structured application logs, traces, and runbooks.
 - Exclusions by default: secrets, connection strings, raw database data containing sensitive information.
 - Goal: the AI agent can answer “what changed / what failed / where to look next” using correlation IDs, logs, and traces.
 
 ---
+## 7.5. Performance and Monitoring Baseline
 
+**Note:** Performance baselines should be established in Phase 1 (Core Infrastructure), not retroactively added later. Early baseline measurement enables accurate detection of regressions throughout the application lifecycle.
+
+### Performance Targets
+| Metric | Target | Measurement Method |
+|--------|--------|-------------------|
+| **API Response Time (p95)** | < 200ms | Application Insights / OpenTelemetry traces |
+| **Page Load Time (Blazor Server)** | < 1.5s | Browser DevTools / Real User Monitoring (RUM) |
+| **Database Query Time (p95)** | < 100ms | EF Core logging + SQL Server Query Store |
+| **Memory Usage (API)** | < 512MB per instance | Performance counters / Container metrics (if applicable) |
+| **Concurrent Users** | 100+ simultaneous | Load testing (JMeter or k6) |
+
+### Baseline Establishment Process
+1. **Measure performance during Phase 1** using synthetic load tests against the reference application in the Test environment.
+2. **Record baseline metrics** in project documentation (e.g., Azure DevOps wiki or repository README). Include test conditions (load profile, data volume, infrastructure specs).
+3. **Set up Azure DevOps dashboards** to track performance trends over time using Azure Boards widgets or custom Power BI reports.
+4. **Configure alerts** to trigger when metrics degrade by 20% or more from the established baseline (e.g., p95 response time exceeds 240ms).
+
+### Monitoring Implementation
+- **Serilog with structured logging:** Instrument the application to emit structured logs containing performance metrics (request duration, query execution time, memory usage).
+- **OpenTelemetry exporter:** Export traces and metrics to an OpenTelemetry collector for centralized aggregation and analysis.
+- **Metric storage:** Store metrics in SQL Server (for integration with existing infrastructure) or a lightweight time-series database (e.g., InfluxDB if dedicated performance monitoring is required).
+- **Dashboards (optional):** Create Grafana or Power BI dashboards for real-time visualization of performance trends. Grafana is recommended for operational monitoring; Power BI for executive reporting.
+
+### Performance Regression Detection in CI/CD
+To prevent performance degradation from reaching Production:
+
+1. **Run automated load tests** in the Test environment as part of the deployment pipeline (before Production deployment).
+2. **Compare test results** against the established baseline metrics (store baseline in Azure DevOps variable group or configuration file).
+3. **Block deployment** if performance degrades by more than 30% compared to baseline (e.g., p95 response time exceeds 260ms). Require manual approval and investigation before proceeding.
+4. **Log regression details** to Azure DevOps build summary for post-deployment review and trend analysis.
+
+### Capacity Planning Triggers
+- **Quarterly metric review:** Schedule a quarterly review of performance metrics with development and operations teams to assess trends and identify optimization opportunities.
+- **Infrastructure upgrade planning:** Plan infrastructure upgrades (additional IIS servers, database scaling, memory increases) when metrics consistently exceed 70% of target thresholds (e.g., p95 response time consistently > 140ms).
+- **Historical trend analysis:** Use historical performance data to predict scaling needs before user impact occurs (e.g., if response time increases 10% per quarter, plan upgrades proactively).
+
+---
 ## 8. Roadmap (Implementation Plan)
 | Phase | Goal | Key Deliverables |
 |--------|------|------------------|
@@ -129,6 +272,36 @@ Each deployment includes:
 | **Phase 3** | AI Layer | Install Llama/Ollama, connect via .NET service, ingest logs/traces/runbooks |
 | **Phase 4** | Monitoring & Enhancements | Central logging/tracing, backups, runbooks, AI-assisted triage workflows |
 | **Phase 5** | Expansion | Repeat migrations, retire apps replaced by COTS, optional containerization where it provides clear value |
+
+---
+
+## 8.5. Testing Strategy
+
+### Testing Levels
+| Level | Coverage Target | Tools | Responsibility | Execution Frequency |
+|-------|----------------|-------|----------------|---------------------|
+| **Unit Tests** | 70% code coverage | xUnit / MSTest | Developer (write tests alongside feature code) | Every commit / local build |
+| **Integration Tests** | 80% coverage of critical API paths | WebApplicationFactory + xUnit | Developer / QA | CI pipeline + pre-deployment |
+| **E2E Tests** | Critical user workflows only | Playwright for Blazor | QA / Automation Engineer | Test environment before Prod deployment |
+
+### API Contract Testing
+API contract tests verify that REST API responses conform to the published OpenAPI specification, ensuring the Blazor UI and other consumers are not broken by backend changes.
+
+**Implementation:**
+- Use `WebApplicationFactory<TEntryPoint>` to spin up the API in-memory during integration tests.
+- Validate response structure, status codes, and schema against the OpenAPI spec.
+- Run contract tests in the CI pipeline **before** deployment artifacts are published.
+- Fail the build if contract violations are detected (prevents breaking changes from reaching Test or Prod).
+
+**Goal:** Prevent accidental breaking changes to API contracts that would impact Blazor Server UI dependencies or future API consumers.
+
+### Test Data Management
+To ensure reliable and repeatable testing without risking production data:
+
+- **SQL Server Database Snapshots:** Use database snapshots or backup/restore for integration tests to start from a known-good state.
+- **Separate Test Database per Environment:** Maintain dedicated test databases for Dev, Test, and CI environments; never share databases across environments.
+- **No Production Data in Tests:** Integration and E2E tests must **never** run against Production databases. Use anonymized or synthetic data for test environments.
+- **Data Seeding:** Use EF Core migrations or seed scripts to populate test databases with predictable data sets for repeatable test execution.
 
 ---
 
