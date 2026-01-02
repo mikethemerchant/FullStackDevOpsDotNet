@@ -1,8 +1,8 @@
-# Future State System Specification (v2)
+# Future State System Specification (v3)
 
 **Author:** Mike Bender  
 **Stack:** Microsoft Full Stack (Blazor, .NET 8, EF Core, SQL Server, Azure DevOps, IIS, Containers, Local AI)  
-**Date:** October 2025  
+**Date:** January 2026 
 
 ---
 
@@ -15,7 +15,7 @@ Create a fully integrated Microsoft-based application platform for internal busi
 ### Core Components
 | Layer | Technology | Purpose |
 |--------|-------------|----------|
-| **Frontend** | **Blazor Server (.NET 8)** | Intranet web UI with Windows SSO and server-side execution. |
+| **Frontend** | **Blazor Server (.NET 8)** | Intranet web UI with Windows SSO and server-side execution. Prioritized for intranet/LAN environments where latency is low and connection stability high; user counts typically support this model in enterprise internal applications. |
 | **Backend API** | **ASP.NET Core REST API (Minimal APIs or Controllers)** | Stable HTTP API contract to keep the UI replaceable. |
 | **Database** | **SQL Server 2022** | Centralized, relational data store. |
 | **ORM** | **Entity Framework Core 8** | Data access and migration management. |
@@ -29,6 +29,7 @@ Create a fully integrated Microsoft-based application platform for internal busi
 ### Architectural Principles (Non-Goals: avoid unnecessary complexity)
 - **API-first:** Business rules live in the REST API so the frontend can change over time.
 - **SSO-first:** Domain-joined users authenticate via Windows Integrated Authentication.
+- **Monolith-first:** The platform uses a modular monolith approach; microservices and distributed systems are explicitly deferred until organizational scale or operational requirements justify the added complexity.
 - **Minimum viable platform:** Standardize templates, logging, and CI/CD before adding containers, service meshes, or complex orchestration.
 
 ---
@@ -60,7 +61,20 @@ graph TD
 
 ---
 
-## 5. Deployment Workflow
+## 5. Out of Scope (Intentional Non-Goals)
+The following are explicitly **not** in scope for this platform and are deferred pending clear operational or scale justification:
+
+- **Kubernetes-first or container-native orchestration:** Containers are deployment tools, not architectural requirements; IIS on Windows Server is the production target.
+- **Internet-facing or public-access architecture:** This is an intranet-only platform; no DMZ, zero-trust, or external API exposure is planned.
+- **Autonomous or self-modifying AI:** AI functions are advisory and read-only; code and infrastructure changes remain human-approved and logged.
+- **AI access to secrets, credentials, or raw sensitive data:** AI receives sanitized logs, traces, source code, and runbooks only; connection strings and API keys remain protected outside the AI layer.
+- **Event-driven microservices or service mesh:** Complexity reserved for later phases; initial messaging is handled via direct API calls and database events (if needed).
+
+These non-goals reduce risk and operational overhead during the initial rollout phases.
+
+---
+
+## 6. Deployment Workflow
 | Stage | Trigger | Action | Target |
 |--------|----------|---------|---------|
 | **Dev** | Local Build | Developer runs locally | Local IIS Express / Kestrel |
@@ -80,13 +94,19 @@ Each deployment includes:
 
 ---
 
-## 6. Local AI Agent (Llama)
+## 7. Local AI Agent (Llama)
 ### Goals
 - Review C#, SQL, and Blazor code for errors and improvements.
 - Propose tests and data validations.
 - Summarize helpdesk tickets and automate updates.
 
-### Architecture
+### Operational Outcomes
+- **Reduced MTTR:** Faster root-cause analysis of build and deployment failures via correlation IDs and structured log summarization.
+- **Accelerated debugging:** AI-assisted triage reduces manual log parsing and speeds handoff between developers and support.
+- **Improved onboarding:** New developers can query the AI for project structure, recent changes, and common runbooks without blocking senior engineers.
+- **Helpdesk workload reduction:** Ticket summarization and status automation reduce manual administrative overhead.
+
+### Technical Architecture
 | Component | Description |
 |------------|--------------|
 | **Ollama / LM Studio** | Runs Llama 3 locally with API access. |
@@ -101,7 +121,7 @@ Each deployment includes:
 
 ---
 
-## 7. Roadmap (Implementation Plan)
+## 8. Roadmap (Implementation Plan)
 | Phase | Goal | Key Deliverables |
 |--------|------|------------------|
 | **Phase 1** | Core Infrastructure (Minimal Platform) | IIS hosting, Windows Auth, API-first templates, YAML CI/CD, baseline structured logging |
@@ -112,7 +132,7 @@ Each deployment includes:
 
 ---
 
-## 8. Training Roadmap (Free Hands-On Tutorials)
+## 9. Training Roadmap (Free Hands-On Tutorials)
 ### 1. **Blazor (.NET 8)**
 - [FreeCodeCamp: Build a Full Blazor WebAssembly App (YouTube)](https://www.youtube.com/watch?v=gfI0hFdY1p8)
 - [Microsoft Learn: Build a Blazor WebAssembly App](https://learn.microsoft.com/en-us/training/modules/build-blazor-webassembly-visual-studio/)
@@ -141,7 +161,7 @@ Note: for this platform, prioritize **Blazor Server** training and patterns (Win
 
 ---
 
-## 9. Implementation Checklist
+## 10. Implementation Checklist
 - [ ] Configure IIS + ASP.NET Core Hosting Bundle  
 - [ ] Enable Windows Integrated Auth (Negotiate) for UI + API  
 - [ ] Define AD group naming + map groups to app authorization policies  
@@ -156,7 +176,7 @@ Note: for this platform, prioritize **Blazor Server** training and patterns (Win
 
 ---
 
-## 10. Next Steps
+## 11. Next Steps
 1. Finalize environment specs for your local test VM.  
 2. Finalize the reference application template (Blazor Server UI + REST API + Windows Auth).  
 3. Wire up your existing Azure DevOps YAML build/deploy pipelines to Test and Prod IIS servers.  
@@ -165,5 +185,5 @@ Note: for this platform, prioritize **Blazor Server** training and patterns (Win
 
 ---
 
-**End of Document — v2.0**
+**End of Document**
 
