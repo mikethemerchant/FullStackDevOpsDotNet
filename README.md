@@ -53,7 +53,7 @@ graph TD
 
 ## 4. Security Model
 
-### Authentication (Who are you?)
+### Authentication
 - **Provider:** Microsoft Entra ID (Azure AD)
 - **Protocol:** OAuth2 / OpenID Connect
 - **Clients:**
@@ -69,13 +69,6 @@ graph TD
 - **Model:** Application-managed roles and permissions
 - **Storage:** SQL Server
 - **Enforcement:** Backend API only
-
-Example:
-  User (ExternalUserId = Entra Object ID)
-  Role
-  Permission
-  UserRole
-  RolePermission
 
 - AD groups may be used **only** for:
   - Initial admin bootstrap
@@ -188,20 +181,6 @@ Follow these steps to rollback an IIS-hosted application to the previous deploym
 
 #### Automated Rollback Capabilities
 - **Azure DevOps redeploy:** Azure DevOps supports one-click redeploy of any previous release via the Releases UI. Navigate to the target environment, select a previous successful release, and click "Redeploy."
-- **PowerShell artifact swap example:**
-
-```powershell
-# Example: Automated IIS artifact swap script
-$appPoolName = "MyAppPool"
-$sitePath = "C:\inetpub\wwwroot\MyApp"
-$backupPath = "C:\Deployments\Backups\MyApp_v1.2.3"
-
-Stop-WebAppPool -Name $appPoolName
-Remove-Item "$sitePath\*" -Recurse -Force
-Copy-Item "$backupPath\*" -Destination $sitePath -Recurse
-Start-WebAppPool -Name $appPoolName
-Write-Host "Rollback complete. Verify health check."
-```
 
 - **Database rollback approval:** Database rollbacks require manual approval due to data loss risk. Automated rollback scripts should **stop and alert** before restoring a database backup, requiring operator confirmation.
 
@@ -215,7 +194,7 @@ After a rollback is executed, complete the following within the specified timefr
 
 ---
 
-## 7. Local AI Agent (Llama)
+## 7. Local AI Agent
 ### Goals
 - Review C#, SQL, and React frontendcode for errors and improvements.
 - Propose tests and data validations.
