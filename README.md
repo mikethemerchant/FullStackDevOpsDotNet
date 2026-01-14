@@ -377,9 +377,9 @@ To ensure reliable and repeatable testing without risking production data:
 
 ## 11. Implementation Checklist
 ### Phase 1 — Core Infrastructure + AI Foundation
-- [ ] Create Azure DevOps repo + YAML pipeline templates (build + deploy)
-- [ ] Setup branch policy (dev/test/main + approval gates)
-- [ ] Configure IIS + ASP.NET Core Hosting Bundle
+- [X] Create Azure DevOps repo + YAML pipeline templates (build + deploy)
+- [X] Setup branch policy (dev/test/main + approval gates)
+- [X] Configure IIS + ASP.NET Core Hosting Bundle
 - [ ] Enable Windows Integrated Auth (Negotiate) for UI + API
 - [ ] Define AD group naming (bootstrap/super-admin only)
 - [ ] Add structured logging + correlation IDs (Serilog recommended)
